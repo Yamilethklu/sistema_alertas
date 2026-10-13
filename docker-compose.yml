@@ -1,0 +1,11 @@
+services:
+  alertas:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8080:8080"
+    volumes:
+      - alertas-data:/data
+volumes:
+  alertas-data:
