@@ -84,6 +84,24 @@ class FlowTests(unittest.TestCase):
         process_item(self.app, {"id": "x", "source": "Prueba", "text": "Busco laptop <script>alert(1)</script> recomiendan?"})
         self.assertNotIn("<script>alert(1)</script>", self.req("/alertas")[1])
 
+    def test_7_editar_palabras_y_fuentes(self):
+        self.req("/login", {"password": "clave-segura-123"})
+        self.app.db.add_keywords("dronn", "producto")
+        kid = [k for k in self.app.db.list_keywords("producto") if k["term"] == "dronn"][0]["id"]
+        st, page = self.req("/palabras?editar=%d" % kid)
+        self.assertIn("Editar palabra", page)
+        self.req("/palabras/editar", {"id": kid, "term": "dron profesional"})
+        self.assertEqual(self.app.db.get_keyword(kid)["term"], "dron profesional")
+        self.req("/palabras/editar", {"id": kid, "term": "laptop"})  # ya existe en productos: se rechaza
+        self.assertEqual(self.app.db.get_keyword(kid)["term"], "dron profesional")
+        self.app.db.add_source("Reddit", "https://ejemplo.com/a.rss")
+        sid = self.app.db.list_sources()[0]["id"]
+        self.assertIn("Editar fuente", self.req("/fuentes?editar=%d" % sid)[1])
+        self.req("/fuentes/editar", {"id": sid, "name": "Reddit laptops", "url": "https://ejemplo.com/b.rss"})
+        self.assertEqual(self.app.db.get_source(sid)["name"], "Reddit laptops")
+        self.req("/fuentes/editar", {"id": sid, "name": "x", "url": "no-es-url"})
+        self.assertEqual(self.app.db.get_source(sid)["url"], "https://ejemplo.com/b.rss")
+
     def test_6_ingest(self):
         payload = json.dumps({"text": "Necesito un teclado mecánico, ¿cuál comprar?", "url": "https://fb.example/1",
                               "source": "Make"}).encode()

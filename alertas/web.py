@@ -71,6 +71,7 @@ ul.kw li span{flex:1;overflow-wrap:anywhere}
 table{border-collapse:collapse;width:100%;background:var(--panel);border:1px solid var(--line)}
 th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);font-size:15px;vertical-align:top}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px 20px;max-width:560px}
+a.editlink{font-size:14px;color:var(--accent);border:1px solid var(--accent);border-radius:6px;padding:3px 10px;text-decoration:none;white-space:nowrap}
 .ok{color:var(--accent);font-weight:600}.bad{color:var(--bad);font-weight:600}
 details{margin:10px 0}summary{cursor:pointer;color:var(--accent);font-weight:600}ol.steps{padding-left:22px}
 .card.wide{max-width:none;margin:0 0 18px}
@@ -204,6 +205,7 @@ def make_handler(app):
         def do_GET(self):
             u = urlparse(self.path)
             path, flash = u.path, self._flash(u.query)
+            self.query = parse_qs(u.query)
             if path == "/health":
                 return self._send(200, "ok", "text/plain")
             if path == "/login":
@@ -229,6 +231,7 @@ def make_handler(app):
             if not self._authed():
                 return self._redirect("/login")
             routes = {
+                "/palabras/editar": self.a_kw_edit, "/fuentes/editar": self.a_src_edit,
                 "/palabras/agregar": self.a_kw_add, "/palabras/alternar": self.a_kw_toggle,
                 "/palabras/borrar": self.a_kw_del, "/fuentes/agregar": self.a_src_add,
                 "/conexiones/correo": self.a_conn_mail, "/conexiones/correo/prueba": self.a_conn_mail_test,
@@ -289,14 +292,20 @@ def make_handler(app):
 
         def p_keywords(self, flash):
             out = ['<p class="hint">Aquí controlas qué detecta el sistema. Los cambios aplican de inmediato.</p>']
+            kw = db.get_keyword(self._int(dict((k, v[0]) for k, v in self.query.items()), "editar"))
+            if kw:
+                out.append('<section class="card wide"><h2>Editar palabra</h2><form method="post" action="/palabras/editar">'
+                           '<input type="hidden" name="id" value="%d"><label for="et">Texto</label>'
+                           '<input id="et" type="text" name="term" value="%s" maxlength="80" required autofocus>'
+                           '<p><button>Guardar cambio</button> <a href="/palabras">Cancelar</a></p></form></section>' % (kw["id"], esc(kw["term"])))
             for kind in KINDS:
                 title, hint = KIND_LABELS[kind]
                 rows = ""
                 for k in db.list_keywords(kind):
-                    rows += ('<li class="%s"><span>%s</span>'
+                    rows += ('<li class="%s"><span>%s</span><a class="editlink" href="/palabras?editar=%d">Editar</a>'
                              '<form class="inline" method="post" action="/palabras/alternar"><input type="hidden" name="id" value="%d"><button class="ghost">%s</button></form>'
                              '<form class="inline" method="post" action="/palabras/borrar"><input type="hidden" name="id" value="%d"><button class="del">Borrar</button></form></li>') % (
-                        "" if k["enabled"] else "off", esc(k["term"]), k["id"],
+                        "" if k["enabled"] else "off", esc(k["term"]), k["id"], k["id"],
                         "Pausar" if k["enabled"] else "Activar", k["id"])
                 out.append('<h2>%s</h2><p class="hint">%s</p>'
                            '<form method="post" action="/palabras/agregar"><input type="hidden" name="kind" value="%s">'
@@ -306,14 +315,23 @@ def make_handler(app):
             return layout("Palabras clave", "".join(out), "/palabras", flash)
 
         def p_sources(self, flash):
+            src = db.get_source(self._int(dict((k, v[0]) for k, v in self.query.items()), "editar"))
+            edit_html = ""
+            if src:
+                edit_html = ('<section class="card wide"><h2>Editar fuente</h2><form method="post" action="/fuentes/editar">'
+                             '<input type="hidden" name="id" value="%d"><label for="en">Nombre</label>'
+                             '<input id="en" type="text" name="name" value="%s" required>'
+                             '<label for="eu">URL del feed</label><input id="eu" type="url" name="url" value="%s" required>'
+                             '<p><button>Guardar cambio</button> <a href="/fuentes">Cancelar</a></p></form></section>' % (
+                                 src["id"], esc(src["name"]), esc(src["url"])))
             rows = ""
             for s in db.list_sources():
                 chk = fmt_time(s["last_checked"], cfg.tz_offset) if s["last_checked"] else "pendiente"
                 err = '<br><span style="color:var(--bad)">%s</span>' % esc(s["last_error"]) if s["last_error"] else ""
-                rows += ('<tr><td>%s<br><code>%s</code></td><td>%s%s</td><td>'
+                rows += ('<tr><td>%s<br><code>%s</code></td><td>%s%s</td><td><a class="editlink" href="/fuentes?editar=%d">Editar</a> '
                          '<form class="inline" method="post" action="/fuentes/alternar"><input type="hidden" name="id" value="%d"><button class="ghost">%s</button></form> '
                          '<form class="inline" method="post" action="/fuentes/borrar"><input type="hidden" name="id" value="%d"><button class="del">Borrar</button></form></td></tr>') % (
-                    esc(s["name"]), esc(s["url"]), chk, err, s["id"], "Pausar" if s["enabled"] else "Activar", s["id"])
+                    esc(s["name"]), esc(s["url"]), chk, err, s["id"], s["id"], "Pausar" if s["enabled"] else "Activar", s["id"])
             rss = ('<table><tr><th>Fuente</th><th>Última lectura</th><th></th></tr>%s</table>' % rows) if rows else \
                 '<p class="hint">No hay feeds RSS todavía.</p>'
             chats = "".join('<tr><td>%s</td><td>%s</td><td>%d</td><td>%s</td><td>'
@@ -334,7 +352,7 @@ def make_handler(app):
                     '<h2>Webhook para otras herramientas</h2><p class="hint">Make, n8n o Zapier pueden enviar publicaciones al sistema con '
                     '<code>POST /api/ingest</code> y el encabezado <code>X-Token</code>. Estado del token: <strong>%s</strong>.</p>') % (
                 tg, rss, "conectado a " + esc(app.cred("imap_user")) if (app.cred("imap_user") and app.cred("imap_password")) else 'sin configurar: <a href="/conexiones">configurar ahora</a>', "configurado" if cfg.ingest_token else "no configurado (INGEST_TOKEN)")
-            return layout("Fuentes", body, "/fuentes", flash)
+            return layout("Fuentes", edit_html + body, "/fuentes", flash)
 
         def p_connections(self, flash):
             cr = app.cred
@@ -540,6 +558,17 @@ def make_handler(app):
             if f.get("que") == "correo":
                 db.set_setting("mail_status", "")
             return self._back("/conexiones", "Quitado. Si venía del servidor (.env), seguirá usándose ese valor.")
+
+        def a_kw_edit(self, f):
+            ok = db.rename_keyword(self._int(f, "id"), f.get("term", ""))
+            return self._back("/palabras", "Palabra actualizada" if ok else "No se pudo guardar (¿ya existe o está vacía?)")
+
+        def a_src_edit(self, f):
+            url, name = f.get("url", "").strip(), f.get("name", "").strip()
+            if not name or not url.startswith(("http://", "https://")):
+                return self._back("/fuentes", "Escribe un nombre y una URL que empiece con http")
+            ok = db.update_source(self._int(f, "id"), name, url)
+            return self._back("/fuentes", "Fuente actualizada" if ok else "No se pudo guardar (¿esa URL ya existe?)")
 
         def a_tg_toggle(self, f):
             db.toggle_tg_chat(f.get("chat_id", ""))

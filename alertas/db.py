@@ -97,6 +97,21 @@ class DB:
                     added += cur.rowcount
         return added
 
+    def get_keyword(self, kid):
+        with self._c() as c:
+            r = c.execute("SELECT * FROM keywords WHERE id=?", (kid,)).fetchone()
+            return dict(r) if r else None
+
+    def rename_keyword(self, kid, term):
+        term = (term or "").strip().lower()
+        if not term or len(term) > 80:
+            return False
+        try:
+            with self._c() as c:
+                return c.execute("UPDATE keywords SET term=? WHERE id=?", (term, kid)).rowcount == 1
+        except sqlite3.IntegrityError:  # ya existe esa palabra en la misma lista
+            return False
+
     def toggle_keyword(self, kid):
         with self._c() as c:
             c.execute("UPDATE keywords SET enabled = 1 - enabled WHERE id=?", (kid,))
@@ -115,6 +130,24 @@ class DB:
         with self._c() as c:
             cur = c.execute("INSERT OR IGNORE INTO sources(name,url) VALUES(?,?)", (name.strip(), url.strip()))
             return cur.rowcount
+
+    def get_source(self, sid):
+        with self._c() as c:
+            r = c.execute("SELECT * FROM sources WHERE id=?", (sid,)).fetchone()
+            return dict(r) if r else None
+
+    def update_source(self, sid, name, url):
+        old = self.get_source(sid)
+        if not old:
+            return False
+        try:
+            with self._c() as c:
+                # si cambia la URL se vuelve a memorizar lo existente, para no inundar de alertas viejas
+                last = old["last_checked"] if url.strip() == old["url"] else None
+                return c.execute("UPDATE sources SET name=?, url=?, last_checked=?, last_error=NULL WHERE id=?",
+                                 (name.strip(), url.strip(), last, sid)).rowcount == 1
+        except sqlite3.IntegrityError:
+            return False
 
     def toggle_source(self, sid):
         with self._c() as c:
