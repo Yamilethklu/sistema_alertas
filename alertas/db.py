@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS alerts(
 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS tg_chats(
   chat_id TEXT PRIMARY KEY, title TEXT, kind TEXT, last_seen INTEGER,
-  messages INTEGER NOT NULL DEFAULT 0);
+  messages INTEGER NOT NULL DEFAULT 0, muted INTEGER NOT NULL DEFAULT 0);
 """
 
 DEFAULT_SETTINGS = {
@@ -29,6 +29,7 @@ DEFAULT_SETTINGS = {
     "max_per_hour": "20",
     "notify_telegram": "1",
     "notify_whatsapp": "1",
+    "notify_email": "0",
 }
 
 KINDS = ("producto", "intencion", "excluir")
@@ -57,6 +58,9 @@ class DB:
         with self._c() as c:
             c.execute("PRAGMA journal_mode=WAL")
             c.executescript(SCHEMA)
+            cols = [r[1] for r in c.execute("PRAGMA table_info(tg_chats)").fetchall()]
+            if "muted" not in cols:  # migración para bases creadas antes de esta versión
+                c.execute("ALTER TABLE tg_chats ADD COLUMN muted INTEGER NOT NULL DEFAULT 0")
             n = c.execute("SELECT COUNT(*) FROM keywords").fetchone()[0]
             if n == 0:
                 now = int(time.time())
@@ -166,7 +170,7 @@ class DB:
                 "enviadas_7d": q("SELECT COUNT(*) FROM alerts WHERE notified=1 AND created_at>=?", now - 7 * 86400),
                 "palabras": q("SELECT COUNT(*) FROM keywords WHERE enabled=1"),
                 "fuentes": q("SELECT COUNT(*) FROM sources WHERE enabled=1"),
-                "grupos_tg": q("SELECT COUNT(*) FROM tg_chats"),
+                "grupos_tg": q("SELECT COUNT(*) FROM tg_chats WHERE kind != 'private'"),
             }
 
     # ---- ajustes
@@ -189,6 +193,15 @@ class DB:
                 "INSERT INTO tg_chats(chat_id,title,kind,last_seen,messages) VALUES(?,?,?,?,1) "
                 "ON CONFLICT(chat_id) DO UPDATE SET title=excluded.title, last_seen=excluded.last_seen, "
                 "messages=messages+1", (chat_id, title, kind, int(time.time())))
+
+    def toggle_tg_chat(self, chat_id):
+        with self._c() as c:
+            c.execute("UPDATE tg_chats SET muted = 1 - muted WHERE chat_id=?", (chat_id,))
+
+    def is_tg_muted(self, chat_id):
+        with self._c() as c:
+            r = c.execute("SELECT muted FROM tg_chats WHERE chat_id=?", (chat_id,)).fetchone()
+        return bool(r and r["muted"])
 
     def list_tg_chats(self):
         with self._c() as c:

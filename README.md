@@ -10,8 +10,15 @@ y te manda un **aviso privado** a Telegram y/o WhatsApp con el enlace directo a 
 | Rastreador | Lee grupos de Telegram (con el bot agregado), feeds RSS/Atom y publicaciones enviadas por webhook |
 | Detector | Frases de intención + productos + palabras de exclusión (“vendo”), con puntaje ajustable |
 | Notificador | Alerta privada a Telegram y/o WhatsApp Cloud API, con límite de avisos por hora |
-| Panel web | Login, alertas, palabras clave, fuentes, ajustes y “Probar texto” para calibrar |
+| Panel web | Login (contraseña, y correo si defines `PANEL_EMAIL`), alertas, palabras clave, fuentes, silenciar grupos de Telegram, ajustes y “Probar texto” para calibrar |
 | Webhook | `POST /api/ingest` para conectar Make, n8n o Zapier |
+
+## Configuración fácil desde el panel
+La página **Conexiones** permite al cliente pegar su correo de Gmail y su contraseña de aplicación, el token del bot de Telegram
+y los datos de WhatsApp, sin editar archivos ni variables del servidor. Cada botón guarda y prueba al momento. Para Telegram,
+basta con que la persona toque *Iniciar* en el bot y el panel la muestre con un botón **Usar este chat** (no hay que buscar el
+chat_id). Los datos se guardan en la base SQLite (protégela con un volumen privado), nunca se muestran de nuevo y lo guardado
+en el panel tiene prioridad sobre el `.env`. También puede mandar cada alerta por correo (SMTP de Gmail).
 
 ## Inicio rápido (local)
 ```bash
@@ -58,6 +65,7 @@ alertas/engine.py   procesamiento, dedupe, límite por hora, hilos de lectura
 alertas/notifier.py envío a Telegram / WhatsApp
 alertas/sources.py  lector RSS/Atom
 alertas/mailbox.py  alertas de Facebook vía correo de notificaciones (IMAP)
+alertas/creds.py    credenciales guardadas desde el panel, servidores de correo
 alertas/web.py      panel y API
 alertas/db.py       SQLite
 tests/              pruebas

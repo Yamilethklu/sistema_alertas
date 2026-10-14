@@ -109,3 +109,100 @@ class MailParseTests(unittest.TestCase):
         self.assertIn("Busco una laptop", it["text"])
         self.assertEqual(it["url"], "https://www.facebook.com/groups/123/posts/456/?x=1&y=2")
         self.assertEqual(it["id"], "<abc@fb>")
+
+
+class EmailLoginAndMuteTests(unittest.TestCase):
+    def test_login_con_correo_y_silenciar_grupo(self):
+        tmp = tempfile.mkdtemp()
+        cfg = Config(panel_password="clave-segura-123", panel_email="Cliente@Ejemplo.com", dry_run=True,
+                     db_path=os.path.join(tmp, "e.db"), host="127.0.0.1", port=0)
+        app = App(cfg)
+        server = make_server(app)
+        base = "http://127.0.0.1:%d" % server.server_address[1]
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            jar = http.cookiejar.CookieJar()
+            op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar), NoRedirect)
+
+            def post(path, data):
+                r = urllib.request.Request(base + path, data=urllib.parse.urlencode(data).encode())
+                try:
+                    with op.open(r) as resp:
+                        return resp.status, resp.read().decode()
+                except urllib.error.HTTPError as e:
+                    return e.code, e.read().decode()
+            self.assertEqual(post("/login", {"email": "otro@x.com", "password": "clave-segura-123"})[0], 401)
+            self.assertEqual(post("/login", {"email": "cliente@ejemplo.com", "password": "mala"})[0], 401)
+            self.assertEqual(post("/login", {"email": "cliente@ejemplo.com", "password": "clave-segura-123"})[0], 303)
+            # silenciar grupo de Telegram
+            from alertas.engine import handle_tg_update
+            upd = {"update_id": 1, "message": {"message_id": 5, "chat": {"id": -1001, "type": "supergroup", "title": "Ofertas"},
+                                                "from": {"first_name": "Ana"}, "text": "Busco una laptop, alguien recomienda?"}}
+            handle_tg_update(app, upd)
+            self.assertEqual(len(app.db.recent_alerts()), 1)
+            post("/fuentes/grupo", {"chat_id": "-1001"})
+            upd["message"]["message_id"] = 6
+            upd["message"]["text"] = "Necesito un monitor, cual me recomiendan?"
+            handle_tg_update(app, upd)
+            self.assertEqual(len(app.db.recent_alerts()), 1)  # silenciado: no hay alerta nueva
+        finally:
+            server.shutdown()
+
+
+class ConexionesTests(unittest.TestCase):
+    def test_conexiones_desde_el_panel(self):
+        from unittest import mock
+        tmp = tempfile.mkdtemp()
+        cfg = Config(panel_password="clave-segura-123", dry_run=True, db_path=os.path.join(tmp, "c.db"),
+                     host="127.0.0.1", port=0)
+        app = App(cfg)
+        server = make_server(app)
+        base = "http://127.0.0.1:%d" % server.server_address[1]
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()), NoRedirect)
+
+        def call(path, data=None):
+            body = urllib.parse.urlencode(data).encode() if data is not None else None
+            try:
+                with op.open(urllib.request.Request(base + path, data=body)) as r:
+                    return r.status, r.read().decode()
+            except urllib.error.HTTPError as e:
+                return e.code, e.read().decode()
+        try:
+            call("/login", {"password": "clave-segura-123"})
+            st, page = call("/conexiones")
+            self.assertEqual(st, 200)
+            self.assertIn("Contraseña de aplicación", page)
+            self.assertFalse(app.notifier.channel_status()["email"]["configurado"])
+
+            # correo: quita espacios de la contraseña, prueba la conexión y activa el canal
+            with mock.patch("alertas.web.check_imap", return_value=(True, "Conexión correcta")):
+                call("/conexiones/correo", {"gmail": "cli@gmail.com", "app_password": "abcd efgh ijkl mnop", "notify_email": "1"})
+            self.assertEqual(app.cred("imap_password"), "abcdefghijklmnop")
+            self.assertTrue(app.notifier.channel_status()["email"]["configurado"])
+            self.assertTrue(app.notifier.channel_status()["email"]["activo"])
+            self.assertNotIn("abcdefghijklmnop", call("/conexiones")[1])  # nunca se vuelve a mostrar
+
+            # telegram: token válido muestra el enlace del bot
+            with mock.patch("alertas.web.tg_call", return_value=(200, {"ok": True, "result": {"username": "mi_bot"}})):
+                call("/conexiones/telegram", {"token": "123:ABC"})
+            self.assertIn("https://t.me/mi_bot", call("/conexiones")[1])
+
+            # alguien toca Iniciar y el cliente lo elige con un clic
+            from alertas.engine import handle_tg_update
+            upd = {"update_id": 1, "message": {"message_id": 1, "text": "/start",
+                   "chat": {"id": 777, "type": "private", "first_name": "Carlos"}, "from": {"first_name": "Carlos"}}}
+            with mock.patch("alertas.engine.tg_call", return_value=(200, {"ok": True})):
+                handle_tg_update(app, upd)
+            self.assertIn("Usar este chat", call("/conexiones")[1])
+            call("/conexiones/telegram/usar", {"chat_id": "999"})  # desconocido: se rechaza
+            self.assertEqual(app.cred("telegram_chat_id"), "")
+            call("/conexiones/telegram/usar", {"chat_id": "777"})
+            self.assertEqual(app.cred("telegram_chat_id"), "777")
+            self.assertTrue(app.notifier.channel_status()["telegram"]["configurado"])
+
+            # quitar correo
+            call("/conexiones/quitar", {"que": "correo"})
+            self.assertFalse(app.notifier.channel_status()["email"]["configurado"])
+        finally:
+            server.shutdown()

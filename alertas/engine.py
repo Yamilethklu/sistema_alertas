@@ -18,9 +18,15 @@ class App:
         self.cfg = cfg
         self.db = DB(cfg.db_path)
         self.db.init()
-        self.notifier = Notifier(cfg, self.db)
+        self.notifier = Notifier(cfg, self.db, self.cred)
         self.stop = threading.Event()
+        self.mail_wake = threading.Event()
         self.threads = []
+
+    def cred(self, key):
+        """Valor guardado desde el panel; si no hay, el de las variables de entorno."""
+        v = self.db.get_setting("c_" + key, "")
+        return v if v else getattr(self.cfg, key, "")
 
     def rules(self):
         d = self.db
@@ -33,10 +39,8 @@ class App:
                                 int(d.get_setting("min_score") or 3))
 
     def start(self):
-        if self.cfg.telegram_token:
-            self._spawn(telegram_loop, "telegram")
-        if self.cfg.imap_host and self.cfg.imap_user:
-            self._spawn(mail_loop, "correo")
+        self._spawn(telegram_loop, "telegram")  # esperan a que haya credenciales (panel o .env)
+        self._spawn(mail_loop, "correo")
         self._spawn(rss_loop, "rss")
 
     def _spawn(self, fn, name):
@@ -129,18 +133,22 @@ def handle_tg_update(app, upd):
     text = msg.get("text") or msg.get("caption") or ""
     cid = str(chat.get("id"))
     if chat.get("type") == "private":
+        who = " ".join(x for x in [chat.get("first_name"), chat.get("last_name")] if x) or chat.get("username") or cid
+        d.touch_tg_chat(cid, who, "private")  # candidato a recibir alertas (se confirma en el panel)
         if text.strip().lower().split("@")[0] in ("/start", "/id"):
-            tg_call(cfg.telegram_token, "sendMessage", {
+            tg_call(app.cred("telegram_token"), "sendMessage", {
                 "chat_id": cid,
                 "text": f"Hola. Tu chat_id es: {cid}\nCópialo en TELEGRAM_ALERT_CHAT_ID para recibir aquí las alertas."})
         return
-    if cid == str(cfg.telegram_chat_id):
+    if cid == str(app.cred("telegram_chat_id")):
         return
     sender = msg.get("from") or {}
     if sender.get("is_bot"):
         return
     title = chat.get("title") or chat.get("username") or cid
     d.touch_tg_chat(cid, title, chat.get("type"))
+    if d.is_tg_muted(cid):
+        return
     mid = msg.get("message_id")
     if chat.get("username"):
         url = f"https://t.me/{chat['username']}/{mid}"
@@ -154,12 +162,18 @@ def handle_tg_update(app, upd):
 
 
 def telegram_loop(app):
-    cfg, d = app.cfg, app.db
-    tg_call(cfg.telegram_token, "deleteWebhook", {})  # getUpdates no funciona con webhook activo
+    d = app.db
     offset = int(d.get_setting("tg_offset", "0") or 0)
-    backoff = 5
+    backoff, active = 5, None
     while not app.stop.is_set():
-        st, data = tg_call(cfg.telegram_token, "getUpdates",
+        token = app.cred("telegram_token")
+        if not token:
+            app.stop.wait(10)
+            continue
+        if token != active:
+            tg_call(token, "deleteWebhook", {})  # getUpdates no funciona con webhook activo
+            active = token
+        st, data = tg_call(token, "getUpdates",
                            {"offset": offset, "timeout": 25, "allowed_updates": ["message", "channel_post"]},
                            timeout=40)
         if st != 200 or not isinstance(data, dict) or not data.get("ok"):

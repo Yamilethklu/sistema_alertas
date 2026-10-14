@@ -10,6 +10,7 @@ import re
 import time
 from email.header import decode_header, make_header
 
+from .creds import mail_hosts
 from .engine_util import clean_html
 
 log = logging.getLogger("alertas.mail")
@@ -59,9 +60,10 @@ def parse_fb_email(raw: bytes):
 def poll_once(app, first_run):
     cfg = app.cfg
     from .engine import process_item
-    imap = imaplib.IMAP4_SSL(cfg.imap_host, timeout=30)
+    host, _ = mail_hosts(app.cred, cfg)
+    imap = imaplib.IMAP4_SSL(host, timeout=30)
     try:
-        imap.login(cfg.imap_user, cfg.imap_password)
+        imap.login(app.cred("imap_user"), app.cred("imap_password"))
         imap.select(cfg.imap_folder, readonly=True)
         since = time.strftime("%d-%b-%Y", time.gmtime(time.time() - 2 * 86400))
         typ, data = imap.search(None, "FROM", f'"{cfg.imap_from}"', "SINCE", since)
@@ -84,13 +86,19 @@ def poll_once(app, first_run):
 
 
 def mail_loop(app):
-    first = app.db.get_setting("imap_baseline", "0") != "1"
     while not app.stop.is_set():
+        user, pw = app.cred("imap_user"), app.cred("imap_password")
+        host, _ = mail_hosts(app.cred, app.cfg)
+        if not (user and pw and host):
+            app.mail_wake.wait(15)
+            app.mail_wake.clear()
+            continue
+        first = app.db.get_setting("imap_baseline", "") != user  # buzón nuevo: solo memoriza lo existente
         try:
             poll_once(app, first)
             if first:
-                app.db.set_setting("imap_baseline", "1")
-                first = False
+                app.db.set_setting("imap_baseline", user)
         except Exception as e:
             log.warning("Error leyendo el correo: %s", e)
-        app.stop.wait(app.cfg.rss_minutes * 60)
+        app.mail_wake.wait(app.cfg.rss_minutes * 60)
+        app.mail_wake.clear()

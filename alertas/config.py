@@ -50,6 +50,8 @@ class Config:
     tz_offset: int = -6
     cookie_secure: bool = False
     trust_proxy: bool = False
+    panel_email: str = ""
+    smtp_host: str = ""
     imap_host: str = ""
     imap_user: str = ""
     imap_password: str = ""
@@ -79,6 +81,8 @@ def load_config() -> Config:
         tz_offset=_int("TZ_OFFSET", -6),
         cookie_secure=_bool("COOKIE_SECURE"),
         trust_proxy=_bool("TRUST_PROXY"),
+        panel_email=e("PANEL_EMAIL", "").strip(),
+        smtp_host=e("SMTP_HOST", ""),
         imap_host=e("IMAP_HOST", ""),
         imap_user=e("IMAP_USER", ""),
         imap_password=e("IMAP_PASSWORD", ""),
