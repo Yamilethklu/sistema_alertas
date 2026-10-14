@@ -50,6 +50,11 @@ class Config:
     tz_offset: int = -6
     cookie_secure: bool = False
     trust_proxy: bool = False
+    imap_host: str = ""
+    imap_user: str = ""
+    imap_password: str = ""
+    imap_folder: str = "INBOX"
+    imap_from: str = "facebookmail.com"
 
 
 def load_config() -> Config:
@@ -74,6 +79,11 @@ def load_config() -> Config:
         tz_offset=_int("TZ_OFFSET", -6),
         cookie_secure=_bool("COOKIE_SECURE"),
         trust_proxy=_bool("TRUST_PROXY"),
+        imap_host=e("IMAP_HOST", ""),
+        imap_user=e("IMAP_USER", ""),
+        imap_password=e("IMAP_PASSWORD", ""),
+        imap_folder=e("IMAP_FOLDER", "INBOX"),
+        imap_from=e("IMAP_FROM", "facebookmail.com"),
     )
     if not cfg.secret_key:
         cfg.secret_key = hashlib.sha256(("alertas|" + cfg.panel_password).encode()).hexdigest()

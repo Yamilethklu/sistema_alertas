@@ -311,9 +311,10 @@ def make_handler(app):
                     '<label for="n">Nombre</label><input id="n" type="text" name="name" required>'
                     '<label for="u">URL del feed</label><input id="u" type="url" name="url" required placeholder="https://…">'
                     '<p><button>Agregar feed</button></p></form>'
+                    '<h2>Facebook por correo</h2><p class="hint">Lee los correos de notificación que Facebook envía a la cuenta de correo del cliente (grupos donde ya es miembro). Estado: <strong>%s</strong>.</p>'
                     '<h2>Webhook para otras herramientas</h2><p class="hint">Make, n8n o Zapier pueden enviar publicaciones al sistema con '
                     '<code>POST /api/ingest</code> y el encabezado <code>X-Token</code>. Estado del token: <strong>%s</strong>.</p>') % (
-                tg, rss, "configurado" if cfg.ingest_token else "no configurado (INGEST_TOKEN)")
+                tg, rss, "conectado a " + esc(cfg.imap_user) if (cfg.imap_host and cfg.imap_user) else "no configurado (IMAP_HOST, IMAP_USER)", "configurado" if cfg.ingest_token else "no configurado (INGEST_TOKEN)")
             return layout("Fuentes", body, "/fuentes", flash)
 
         def p_probe(self, flash, text="", result=None):

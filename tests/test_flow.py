@@ -96,3 +96,16 @@ class FlowTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MailParseTests(unittest.TestCase):
+    def test_correo_facebook(self):
+        from alertas.mailbox import parse_fb_email
+        raw = (b"From: Facebook <notification@facebookmail.com>\r\nSubject: Ana publico en Ofertas MX\r\n"
+               b"Message-ID: <abc@fb>\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=utf-8\r\n\r\n"
+               b"<html><body><p>Busco una laptop, alguien recomienda?</p>"
+               b"<a href=\"https://www.facebook.com/groups/123/posts/456/?x=1&amp;y=2\">Ver publicacion</a></body></html>")
+        it = parse_fb_email(raw)
+        self.assertIn("Busco una laptop", it["text"])
+        self.assertEqual(it["url"], "https://www.facebook.com/groups/123/posts/456/?x=1&y=2")
+        self.assertEqual(it["id"], "<abc@fb>")

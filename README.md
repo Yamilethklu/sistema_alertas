@@ -34,16 +34,19 @@ Pruebas automáticas: `python3 -m unittest discover -s tests -t .`
    que quieras vigilar. Solo lee mensajes de grupos donde lo agregaron. Escríbele `/start` en privado para ver tu chat_id.
 2. **RSS/Atom:** desde el panel (Fuentes). Ejemplo Reddit: `https://www.reddit.com/search.rss?q=busco+laptop&sort=new`.
    La primera lectura de cada feed solo memoriza lo existente, para no inundarte de alertas viejas.
-3. **Webhook:**
+3. **Facebook por correo (sin scraping):** el cliente activa en Facebook las notificaciones de los grupos donde ya es
+   miembro (Grupo → Notificaciones → Todas las publicaciones). Facebook le manda un correo por publicación; el sistema lee ese
+   buzón por IMAP (solo lectura) y genera la alerta con el enlace a la publicación. Define `IMAP_HOST`, `IMAP_USER` e
+   `IMAP_PASSWORD` (contraseña de aplicación). Limitación: solo cubre los grupos y publicaciones que Facebook decida notificar.
+4. **Webhook:**
    ```bash
    curl -X POST https://TU-DOMINIO/api/ingest -H "X-Token: TU_INGEST_TOKEN" -H "Content-Type: application/json" \
      -d '{"text":"Busco un taladro, ¿recomiendan alguno?","url":"https://...","source":"Make","author":"Ana"}'
    ```
 
 ## Lo que NO hace (a propósito)
-- **No rastrea Facebook.** Meta no ofrece API para buscar publicaciones en grupos y hacer scraping viola sus términos
-  (riesgo de bloqueo de cuentas). Si el cliente tiene una fuente legítima de Facebook (por ejemplo, notificaciones de
-  grupos donde él ya es miembro), se puede conectar por el webhook.
+- **No hace scraping de Facebook.** Meta no ofrece API para buscar publicaciones en grupos y rastrearlo viola sus términos
+  (riesgo de bloqueo de cuentas). Facebook entra solo por las notificaciones por correo del propio cliente (ver Fuentes).
 - **No publica ni comenta automáticamente** en ninguna plataforma.
 
 ## Estructura
@@ -54,6 +57,7 @@ alertas/matcher.py  detector de intención
 alertas/engine.py   procesamiento, dedupe, límite por hora, hilos de lectura
 alertas/notifier.py envío a Telegram / WhatsApp
 alertas/sources.py  lector RSS/Atom
+alertas/mailbox.py  alertas de Facebook vía correo de notificaciones (IMAP)
 alertas/web.py      panel y API
 alertas/db.py       SQLite
 tests/              pruebas

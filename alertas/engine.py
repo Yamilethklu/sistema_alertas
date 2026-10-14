@@ -7,6 +7,7 @@ import time
 from . import matcher
 from .db import DB
 from .notifier import Notifier, tg_call
+from .mailbox import mail_loop
 from .sources import fetch_feed
 
 log = logging.getLogger("alertas.engine")
@@ -34,6 +35,8 @@ class App:
     def start(self):
         if self.cfg.telegram_token:
             self._spawn(telegram_loop, "telegram")
+        if self.cfg.imap_host and self.cfg.imap_user:
+            self._spawn(mail_loop, "correo")
         self._spawn(rss_loop, "rss")
 
     def _spawn(self, fn, name):
